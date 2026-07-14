@@ -15,17 +15,15 @@ logger = logging.getLogger(__name__)
 async def human_delay():
     await asyncio.sleep(random.uniform(3, 8))
 
-async def parse_google_result(card) -> Dict[str, Any]:
+async def parse_bing_result(card) -> Dict[str, Any]:
     try:
-        # Evaluate to extract info from Google result (div.g)
+        # Evaluate to extract info from Bing result (li.b_algo)
         info = await card.evaluate('''el => {
-            const linkEl = el.querySelector('a');
-            const titleEl = el.querySelector('h3');
-            // Google snippets are usually in a div inside the result body
-            const snippetEl = el.querySelector('.VwiC3b') || el.querySelector('div[data-sncf="1"]') || el.innerText;
+            const linkEl = el.querySelector('h2 a');
+            const snippetEl = el.querySelector('.b_caption p') || el.querySelector('.b_algoSlug') || el.innerText;
             
             let link = linkEl ? linkEl.getAttribute('href') : "";
-            let fullTitle = titleEl ? titleEl.innerText : "";
+            let fullTitle = linkEl ? linkEl.innerText : "";
             let snippet = snippetEl && typeof snippetEl !== "string" ? snippetEl.innerText : "";
             
             // Basic parsing of LinkedIn title (e.g. "John Doe - Software Engineer - Google | LinkedIn")
@@ -58,12 +56,12 @@ async def parse_google_result(card) -> Dict[str, Any]:
             return info
         return None
     except Exception as e:
-        logger.error(f"Error parsing google result: {e}")
+        logger.error(f"Error parsing bing result: {e}")
         return None
 
 async def run_scraper():
     ua = UserAgent()
-    pages_to_scrape = 5 # Google pages (10 results per page)
+    pages_to_scrape = 5 # Bing pages (10 results per page)
     
     async with async_playwright() as p:
         browser_args = [
@@ -76,7 +74,7 @@ async def run_scraper():
             args=browser_args
         )
         
-        # Build Google Dork query
+        # Build Bing Dork query
         # e.g., site:linkedin.com/in/ "Python Developer" "London"
         query = f'site:linkedin.com/in/ "{SEARCH_KEYWORDS}" "{SEARCH_LOCATION}"'
         encoded_query = urllib.parse.quote_plus(query)
@@ -96,29 +94,30 @@ async def run_scraper():
             page = await context.new_page()
             await stealth_async(page)
             
-            offset = page_index * 10
-            url = f"https://www.google.com/search?q={encoded_query}&start={offset}"
+            # Bing uses first=1, 11, 21 for pagination
+            first = (page_index * 10) + 1
+            url = f"https://www.bing.com/search?q={encoded_query}&first={first}"
             
             proxy_url = proxy.get("server") if proxy else "None"
-            logger.info(f"Page {page_index+1}/{pages_to_scrape}: Navigating to Google (Proxy: {proxy_url})")
+            logger.info(f"Page {page_index+1}/{pages_to_scrape}: Navigating to Bing (Proxy: {proxy_url})")
             
             try:
                 await page.goto(url, wait_until="domcontentloaded")
                 await human_delay()
                 
-                # Check for captcha
-                if "sorry/index" in page.url or await page.query_selector('form#captcha-form'):
-                    logger.warning("Google CAPTCHA detected. Skipping this page / trying new proxy next time.")
+                # Check for captcha or blocks on Bing
+                if "b_captcha" in await page.content():
+                    logger.warning("Bing CAPTCHA detected. Skipping this page / trying new proxy next time.")
                     await context.close()
                     continue
                 
-                # Parse Google results
-                results = await page.query_selector_all('div.g')
-                logger.info(f"Found {len(results)} search results on current Google page.")
+                # Parse Bing results
+                results = await page.query_selector_all('li.b_algo')
+                logger.info(f"Found {len(results)} search results on current Bing page.")
                 
                 saved_count = 0
                 for result in results:
-                    person_data = await parse_google_result(result)
+                    person_data = await parse_bing_result(result)
                     if person_data:
                         await save_person(person_data)
                         saved_count += 1
@@ -129,7 +128,7 @@ async def run_scraper():
                 logger.error(f"Error on page {page_index+1}: {e}")
             
             await context.close()
-            logger.info("Taking a break before the next Google page...")
+            logger.info("Taking a break before the next Bing page...")
             await human_delay()
 
         await browser.close()
