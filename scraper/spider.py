@@ -53,39 +53,45 @@ async def run_scraper():
     
     logger.info(f"Using Query: {query}")
     
-    proxy = random.choice(PROXIES_LIST) if PROXIES_LIST else None
-    proxy_url = proxy.get('server') if proxy else None
-
-    # In duckduckgo_search >= 6.1.7 we can pass proxies as a string
-    # E.g. "http://user:pass@ip:port"
-    if proxy_url and proxy and proxy.get('username'):
-         # Format proxy to string with auth
-         # proxy_url is like "http://ip:port"
-         ip_port = proxy_url.replace('http://', '').replace('https://', '')
-         schema = 'https' if 'https' in proxy_url else 'http'
-         user = proxy['username']
-         pw = proxy['password']
-         formatted_proxy = f"{schema}://{user}:{pw}@{ip_port}"
-    else:
-         formatted_proxy = proxy_url
-
-    if formatted_proxy:
-         logger.info(f"Using Proxy: {proxy_url}")
+    # Shuffle proxies to try random ones first
+    proxies_to_try = PROXIES_LIST.copy()
+    random.shuffle(proxies_to_try)
     
-    try:
-        saved_count = 0
-        async with AsyncDDGS(proxy=formatted_proxy) as ddgs:
-            # max_results limits how many profiles we get, DDGS handles pagination natively
-            results = await ddgs.atext(query, max_results=50)
+    if not proxies_to_try:
+        proxies_to_try.append(None) # try without proxy
+        
+    for proxy in proxies_to_try:
+        proxy_url = proxy.get('server') if proxy else None
+        
+        if proxy_url and proxy and proxy.get('username'):
+             ip_port = proxy_url.replace('http://', '').replace('https://', '')
+             schema = 'https' if 'https' in proxy_url else 'http'
+             user = proxy['username']
+             pw = proxy['password']
+             formatted_proxy = f"{schema}://{user}:{pw}@{ip_port}"
+        else:
+             formatted_proxy = proxy_url
+
+        if formatted_proxy:
+             logger.info(f"Trying Proxy: {proxy_url}")
+        else:
+             logger.info("Trying without proxy...")
+        
+        try:
+            saved_count = 0
+            async with AsyncDDGS(proxy=formatted_proxy) as ddgs:
+                results = await ddgs.atext(query, max_results=50)
+                logger.info(f"Found {len(results)} results from DDG API with this proxy.")
+                
+                for res in results:
+                    person_data = await parse_ddgs_result(res)
+                    if person_data:
+                        await save_person(person_data)
+                        saved_count += 1
+                        
+            logger.info(f"Successfully saved {saved_count} people in total.")
+            return # Success! Exit the function
+        except Exception as e:
+            logger.error(f"Error with proxy {proxy_url}: {e}")
             
-            logger.info(f"Found {len(results)} results from DDG API.")
-            
-            for res in results:
-                person_data = await parse_ddgs_result(res)
-                if person_data:
-                    await save_person(person_data)
-                    saved_count += 1
-                    
-        logger.info(f"Successfully saved {saved_count} people in total.")
-    except Exception as e:
-        logger.error(f"Error during DuckDuckGo API scraping: {e}")
+    logger.error("All proxies failed or were rate-limited.")
