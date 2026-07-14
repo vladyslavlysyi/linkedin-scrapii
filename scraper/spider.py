@@ -44,51 +44,67 @@ async def parse_google_result(res: dict) -> Dict[str, Any]:
 
 import requests
 
-async def scrape_with_scraperapi(api_key: str, query: str):
-    logger.info(f"Using native ScraperAPI Google Search mode")
-    url = f"https://www.google.com/search?q={query}"
+async def scrape_with_scraperapi(api_key: str, query: str, total_pages: int = 3):
+    logger.info(f"Using native ScraperAPI Google Search mode for {total_pages} pages")
     
-    payload = {
-        'api_key': api_key,
-        'url': url,
-        'autoparse': 'true',
-        'premium': 'true'
-    }
-    
-    for attempt in range(3):
-        try:
-            # run requests.get in a separate thread so it doesn't block the async loop
-            response = await asyncio.to_thread(
-                requests.get, 
-                'https://api.scraperapi.com/', 
-                params=payload, 
-                timeout=60
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                results = data.get('organic_results', [])
-                logger.info(f"ScraperAPI returned {len(results)} organic results")
-                saved_count = 0
-                for res in results:
-                    person = await parse_google_result(res)
-                    if person:
-                        await save_person(person)
-                        saved_count += 1
-                logger.info(f"Successfully saved {saved_count} people from Google.")
-                return True
-            elif response.status_code == 500:
-                logger.warning(f"ScraperAPI returned 500 (attempt {attempt+1}/3), retrying...")
+    total_saved = 0
+    for page in range(total_pages):
+        start_param = page * 10
+        url = f"https://www.google.com/search?q={query}&start={start_param}"
+        
+        payload = {
+            'api_key': api_key,
+            'url': url,
+            'autoparse': 'true',
+            'premium': 'true'
+        }
+        
+        page_success = False
+        for attempt in range(3):
+            try:
+                # run requests.get in a separate thread so it doesn't block the async loop
+                response = await asyncio.to_thread(
+                    requests.get, 
+                    'https://api.scraperapi.com/', 
+                    params=payload, 
+                    timeout=60
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    results = data.get('organic_results', [])
+                    logger.info(f"ScraperAPI returned {len(results)} organic results for page {page + 1}")
+                    
+                    if not results:
+                        # No more results, stop paginating
+                        logger.info("No more results on this page, stopping pagination.")
+                        return total_saved > 0
+
+                    saved_count = 0
+                    for res in results:
+                        person = await parse_google_result(res)
+                        if person:
+                            await save_person(person)
+                            saved_count += 1
+                            total_saved += 1
+                    logger.info(f"Successfully saved {saved_count} people from Google page {page + 1}.")
+                    page_success = True
+                    break # Success, move to next page
+                elif response.status_code == 500:
+                    logger.warning(f"ScraperAPI returned 500 (attempt {attempt+1}/3), retrying...")
+                    await asyncio.sleep(2)
+                else:
+                    logger.error(f"ScraperAPI failed with status {response.status_code}: {response.text}")
+                    break
+            except Exception as e:
+                logger.error(f"ScraperAPI request error on attempt {attempt+1}: {e}")
                 await asyncio.sleep(2)
-            else:
-                logger.error(f"ScraperAPI failed with status {response.status_code}: {response.text}")
-                return False
-        except Exception as e:
-            logger.error(f"ScraperAPI request error on attempt {attempt+1}: {e}")
-            await asyncio.sleep(2)
-    
-    logger.error("ScraperAPI failed after 3 attempts.")
-    return False
+        
+        if not page_success:
+            logger.error(f"Failed to scrape page {page + 1} after 3 attempts. Stopping pagination.")
+            break
+            
+    return total_saved > 0
 
 async def run_scraper():
     logger.info("Starting Scraper...")
