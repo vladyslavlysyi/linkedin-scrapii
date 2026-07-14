@@ -53,23 +53,34 @@ async def scrape_with_scraperapi(api_key: str, query: str):
     }
     
     async with aiohttp.ClientSession() as session:
-        async with session.get('https://api.scraperapi.com/', params=payload, timeout=60) as response:
-            if response.status == 200:
-                data = await response.json()
-                results = data.get('organic_results', [])
-                logger.info(f"ScraperAPI returned {len(results)} organic results")
-                saved_count = 0
-                for res in results:
-                    person = await parse_google_result(res)
-                    if person:
-                        await save_person(person)
-                        saved_count += 1
-                logger.info(f"Successfully saved {saved_count} people from Google.")
-                return True
-            else:
-                text = await response.text()
-                logger.error(f"ScraperAPI failed with status {response.status}: {text}")
-                return False
+        for attempt in range(3):
+            try:
+                async with session.get('https://api.scraperapi.com/', params=payload, timeout=60) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        results = data.get('organic_results', [])
+                        logger.info(f"ScraperAPI returned {len(results)} organic results")
+                        saved_count = 0
+                        for res in results:
+                            person = await parse_google_result(res)
+                            if person:
+                                await save_person(person)
+                                saved_count += 1
+                        logger.info(f"Successfully saved {saved_count} people from Google.")
+                        return True
+                    elif response.status == 500:
+                        logger.warning(f"ScraperAPI returned 500 (attempt {attempt+1}/3), retrying...")
+                        await asyncio.sleep(2)
+                    else:
+                        text = await response.text()
+                        logger.error(f"ScraperAPI failed with status {response.status}: {text}")
+                        return False
+            except Exception as e:
+                logger.error(f"ScraperAPI request error on attempt {attempt+1}: {e}")
+                await asyncio.sleep(2)
+        
+        logger.error("ScraperAPI failed after 3 attempts.")
+        return False
 
 async def run_scraper():
     logger.info("Starting Scraper...")
