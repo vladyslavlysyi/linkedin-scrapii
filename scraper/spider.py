@@ -44,7 +44,7 @@ async def parse_google_result(res: dict) -> Dict[str, Any]:
 
 async def scrape_with_scraperapi(api_key: str, query: str):
     logger.info(f"Using native ScraperAPI Google Search mode")
-    url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
+    url = f"https://www.google.com/search?q={query}"
     
     payload = {
         'api_key': api_key,
