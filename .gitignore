@@ -36,3 +36,8 @@ postgres_data/
 
 # MacOS
 .DS_Store
+
+test_*.py
+*.html
+!frontend/index.html
+!frontend/**/*.html
