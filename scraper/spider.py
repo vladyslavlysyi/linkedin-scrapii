@@ -87,14 +87,28 @@ async def run_scraper():
     
     for proxy in proxies_to_try:
         # Check if this proxy is actually ScraperAPI
-        if proxy and proxy.get('username') == 'scraperapi':
-            api_key = proxy.get('password')
-            if api_key:
-                success = await scrape_with_scraperapi(api_key, query)
-                if success:
-                    return # exit successfully
-                else:
-                    logger.warning("ScraperAPI failed, trying next proxy...")
-                    continue
+        is_scraper_api = False
+        api_key = None
+        
+        if proxy:
+            server = proxy.get('server', '')
+            if 'scraperapi' in server:
+                is_scraper_api = True
+                # Extract password from http://username:password@...
+                if '@' in server:
+                    auth_part = server.split('@')[0]
+                    if ':' in auth_part:
+                        api_key = auth_part.split(':')[-1]
+            elif proxy.get('username') == 'scraperapi':
+                is_scraper_api = True
+                api_key = proxy.get('password')
+                
+        if is_scraper_api and api_key:
+            success = await scrape_with_scraperapi(api_key, query)
+            if success:
+                return # exit successfully
+            else:
+                logger.warning("ScraperAPI failed, trying next proxy...")
+                continue
 
     logger.error("No valid ScraperAPI key found or all failed.")
