@@ -1,10 +1,1 @@
-31.59.20.176:6754:zjybkvpn:2cmajr2dfho5
-31.56.127.193:7684:zjybkvpn:2cmajr2dfho5
-45.38.107.97:6014:zjybkvpn:2cmajr2dfho5
-198.105.121.200:6462:zjybkvpn:2cmajr2dfho5
-64.137.96.74:6641:zjybkvpn:2cmajr2dfho5
-198.23.243.226:6361:zjybkvpn:2cmajr2dfho5
-38.154.185.97:6370:zjybkvpn:2cmajr2dfho5
-84.247.60.125:6095:zjybkvpn:2cmajr2dfho5
-142.111.67.146:5611:zjybkvpn:2cmajr2dfho5
-191.96.254.138:6185:zjybkvpn:2cmajr2dfho5
+http://scraperapi:3379793bf235410936cb0317c7a1e2dd@proxy-server.scraperapi.com:8001
