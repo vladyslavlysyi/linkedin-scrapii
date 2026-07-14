@@ -49,7 +49,8 @@ async def scrape_with_scraperapi(api_key: str, query: str):
     payload = {
         'api_key': api_key,
         'url': url,
-        'autoparse': 'true'
+        'autoparse': 'true',
+        'premium': 'true'
     }
     
     async with aiohttp.ClientSession() as session:
