@@ -98,6 +98,7 @@ async def run_scraper():
     
     proxy = random.choice(PROXIES_LIST) if PROXIES_LIST else None
     proxy_url = proxy.get('server') if proxy else None
+    proxy_auth = aiohttp.BasicAuth(proxy['username'], proxy['password']) if proxy and 'username' in proxy and proxy['username'] else None
     
     logger.info(f"Using Query: {query}")
     if proxy_url:
@@ -115,7 +116,7 @@ async def run_scraper():
             for page_index in range(pages_to_scrape):
                 logger.info(f"Scraping DDG Lite Page {page_index+1}/{pages_to_scrape}...")
                 
-                async with session.post(url, data=data, proxy=proxy_url, timeout=30) as resp:
+                async with session.post(url, data=data, proxy=proxy_url, proxy_auth=proxy_auth, timeout=30) as resp:
                     if resp.status != 200:
                         logger.error(f"Failed to fetch page, status: {resp.status}")
                         break
