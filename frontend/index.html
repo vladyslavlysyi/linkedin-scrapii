@@ -3,64 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LinkedIn Jobs Queue</title>
+    <title>LinkedIn Scraper Pro</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header class="topbar">
-        <div class="logo">
-            <span class="icon">💼</span>
-            <div class="logo-text">
-                <h1>ЧЕРГА ВАКАНСІЙ</h1>
-                <p>зібрано скрапером із LinkedIn</p>
-            </div>
-        </div>
-        <div class="top-stats">
-            <div class="stat">
-                <span class="stat-num" id="total-stat">0</span>
-                <span class="stat-label">всього в базі</span>
-            </div>
-        </div>
-    </header>
+    <div class="app-background">
+        <div class="gradient-sphere shape-1"></div>
+        <div class="gradient-sphere shape-2"></div>
+        <div class="gradient-sphere shape-3"></div>
+    </div>
 
-    <div class="container">
-        <aside class="sidebar">
-            <div class="filter-header">
-                <h2>ФІЛЬТРИ</h2>
-                <button class="reset-btn" id="reset-btn">↺ Скинути</button>
-            </div>
-            
-            <div class="filter-group">
-                <label>Пошук</label>
-                <input type="text" id="search-input" placeholder="🔍 назва, компанія...">
-            </div>
-
-            <!-- Removed "Level" filter because LinkedIn scraper doesn't easily extract Junior/Middle/Senior as structured tags, but we could search by keywords in the future -->
-
-            <div class="filter-group">
-                <label>Місце / Локація</label>
-                <input type="text" id="location-input" placeholder="🌍 Всі локації...">
-            </div>
-
-        </aside>
-
-        <main class="content">
-            <div class="content-header">
-                <div class="tabs">
-                    <button class="tab active">Усі <span id="tab-count">0</span></button>
+    <div class="app-wrapper glass-panel">
+        <header class="topbar">
+            <div class="logo">
+                <div class="logo-icon"></div>
+                <div class="logo-text">
+                    <h1>LinkScrape<span class="pro-badge">PRO</span></h1>
+                    <p>Advanced LinkedIn Intelligence</p>
                 </div>
             </div>
+            
+            <nav class="main-tabs">
+                <button class="nav-tab active" data-tab="people">
+                    <span class="icon">👥</span> Кандидати
+                </button>
+                <button class="nav-tab" data-tab="jobs">
+                    <span class="icon">💼</span> Вакансії
+                </button>
+            </nav>
 
-            <div class="job-count-text">
-                <span id="filtered-count">0</span> записів
+            <div class="top-stats">
+                <div class="stat-box glass-panel">
+                    <span class="stat-num" id="total-stat">0</span>
+                    <span class="stat-label">Всього записів</span>
+                </div>
             </div>
+        </header>
 
-            <div class="job-list" id="job-list">
-                <!-- Job cards will be injected here by JS -->
-                <div class="loading">Завантаження вакансій...</div>
-            </div>
-        </main>
+        <div class="container">
+            <aside class="sidebar glass-panel">
+                <div class="filter-header">
+                    <h2>Фільтри пошуку</h2>
+                    <button class="reset-btn" id="reset-btn">↺ Скинути</button>
+                </div>
+                
+                <div class="filter-group">
+                    <label>Ключові слова</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon">🔍</span>
+                        <input type="text" id="search-input" placeholder="Посада, ім'я...">
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <label>Місцезнаходження</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon">📍</span>
+                        <input type="text" id="location-input" placeholder="Київ, Remote...">
+                    </div>
+                </div>
+            </aside>
+
+            <main class="content">
+                <div class="content-header">
+                    <h2 class="section-title" id="section-title">Список Кандидатів</h2>
+                    <div class="result-count">
+                        <span class="pulse-dot"></span>
+                        Знайдено: <strong id="filtered-count">0</strong>
+                    </div>
+                </div>
+
+                <div class="list-container" id="list-container">
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Синхронізація з базою даних...</p>
+                    </div>
+                </div>
+            </main>
+        </div>
     </div>
 
     <script src="app.js"></script>

@@ -4,7 +4,7 @@ from sqlalchemy.dialects.postgresql import insert
 import logging
 
 from core.config import DATABASE_URL
-from core.models import Base, Job
+from core.models import Base, Job, Person
 
 logger = logging.getLogger(__name__)
 
@@ -43,3 +43,27 @@ async def save_job(job_data: dict):
         except Exception as e:
             await session.rollback()
             logger.error(f"Error saving job {job_data['job_link']}: {e}")
+
+async def save_person(person_data: dict):
+    async with AsyncSessionLocal() as session:
+        stmt = insert(Person).values(**person_data)
+        
+        # Upsert: ON CONFLICT ON profile_link DO UPDATE
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['profile_link'],
+            set_={
+                'name': stmt.excluded.name,
+                'headline': stmt.excluded.headline,
+                'location': stmt.excluded.location,
+                'snippet': stmt.excluded.snippet,
+                'scraped_at': stmt.excluded.scraped_at
+            }
+        )
+        
+        try:
+            await session.execute(stmt)
+            await session.commit()
+            logger.info(f"Saved/Updated person: {person_data['name']}")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Error saving person {person_data['profile_link']}: {e}")

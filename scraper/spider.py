@@ -1,74 +1,73 @@
 import asyncio
 import logging
 import random
+import urllib.parse
 from typing import Dict, Any
 
 from playwright.async_api import async_playwright
 from fake_useragent import UserAgent
 
 from core.config import PROXIES_LIST, SEARCH_KEYWORDS, SEARCH_LOCATION
-from core.database import save_job
+from core.database import save_person
 
 logger = logging.getLogger(__name__)
 
 async def human_delay():
-    await asyncio.sleep(random.uniform(3, 9))
+    await asyncio.sleep(random.uniform(3, 8))
 
-async def parse_job_card(page, card) -> Dict[str, Any]:
+async def parse_google_result(card) -> Dict[str, Any]:
     try:
-        # Evaluate all basic info in one go to prevent detached DOM node errors
-        basic_info = await card.evaluate('''el => {
-            const titleEl = el.querySelector('.base-search-card__title');
-            const companyEl = el.querySelector('.base-search-card__subtitle');
-            const locEl = el.querySelector('.job-search-card__location');
-            const dateEl = el.querySelector('.job-search-card__listdate');
-            const linkEl = el.querySelector('.base-card__full-link');
-            
-            let datePosted = "";
-            if (dateEl) {
-                datePosted = dateEl.getAttribute('datetime') || dateEl.innerText;
-            }
+        # Evaluate to extract info from Google result (div.g)
+        info = await card.evaluate('''el => {
+            const linkEl = el.querySelector('a');
+            const titleEl = el.querySelector('h3');
+            // Google snippets are usually in a div inside the result body
+            const snippetEl = el.querySelector('.VwiC3b') || el.querySelector('div[data-sncf="1"]') || el.innerText;
             
             let link = linkEl ? linkEl.getAttribute('href') : "";
-            if (link) {
-                link = link.split('?')[0];
+            let fullTitle = titleEl ? titleEl.innerText : "";
+            let snippet = snippetEl && typeof snippetEl !== "string" ? snippetEl.innerText : "";
+            
+            // Basic parsing of LinkedIn title (e.g. "John Doe - Software Engineer - Google | LinkedIn")
+            let name = fullTitle;
+            let headline = fullTitle;
+            
+            if (fullTitle.includes('-')) {
+                const parts = fullTitle.split('-');
+                name = parts[0].trim();
+                headline = parts.slice(1).join('-').replace(/\| LinkedIn/i, '').trim();
+            } else if (fullTitle.includes('|')) {
+                const parts = fullTitle.split('|');
+                name = parts[0].trim();
+                headline = parts.slice(1).join('|').replace(/LinkedIn/i, '').trim();
             }
             
             return {
-                title: titleEl ? titleEl.innerText.trim() : "",
-                company: companyEl ? companyEl.innerText.trim() : "",
-                location: locEl ? locEl.innerText.trim() : "",
-                date_posted: datePosted.trim(),
-                job_link: link.trim()
+                name: name,
+                headline: headline,
+                profile_link: link,
+                snippet: snippet
             };
         }''')
         
-        description = ""
-        # Try to click and get description, but don't fail the whole parsing if it times out
-        if basic_info['job_link']:
-            try:
-                await card.click(timeout=3000, force=True)
-                await asyncio.sleep(random.uniform(1.5, 3))
-                desc_elem = await page.query_selector('.show-more-less-html__markup')
-                if desc_elem:
-                    description = await desc_elem.inner_text()
-            except Exception as e:
-                logger.warning(f"Could not load description for '{basic_info['title']}': {e}")
-        
-        basic_info['description'] = description.strip()
-        return basic_info
+        # We only want LinkedIn profiles
+        if info['profile_link'] and 'linkedin.com/in/' in info['profile_link']:
+            # Clean tracking params from URL
+            info['profile_link'] = info['profile_link'].split('?')[0]
+            info['location'] = SEARCH_LOCATION # Assign search location since exact is hard from snippet
+            return info
+        return None
     except Exception as e:
-        logger.error(f"Error parsing job card: {e}")
+        logger.error(f"Error parsing google result: {e}")
         return None
 
 async def run_scraper():
     ua = UserAgent()
-    pages_to_scrape = 4
+    pages_to_scrape = 5 # Google pages (10 results per page)
     
     async with async_playwright() as p:
         browser_args = [
             '--disable-blink-features=AutomationControlled',
-            '--disable-infobars',
             '--window-size=1920,1080',
         ]
         
@@ -76,6 +75,11 @@ async def run_scraper():
             headless=True,
             args=browser_args
         )
+        
+        # Build Google Dork query
+        # e.g., site:linkedin.com/in/ "Python Developer" "London"
+        query = f'site:linkedin.com/in/ "{SEARCH_KEYWORDS}" "{SEARCH_LOCATION}"'
+        encoded_query = urllib.parse.quote_plus(query)
         
         for page_index in range(pages_to_scrape):
             proxy = None
@@ -88,46 +92,44 @@ async def run_scraper():
                 proxy=proxy
             )
             
-            # Load playwright-stealth
             from playwright_stealth import stealth_async
             page = await context.new_page()
             await stealth_async(page)
             
-            # Use &start= parameter for pagination (0, 25, 50, 75...)
-            offset = page_index * 25
-            url = f"https://www.linkedin.com/jobs/search/?keywords={SEARCH_KEYWORDS}&location={SEARCH_LOCATION}&start={offset}"
+            offset = page_index * 10
+            url = f"https://www.google.com/search?q={encoded_query}&start={offset}"
             
             proxy_url = proxy.get("server") if proxy else "None"
-            logger.info(f"Page {page_index+1}/{pages_to_scrape}: Navigating to {url} using proxy: {proxy_url}")
+            logger.info(f"Page {page_index+1}/{pages_to_scrape}: Navigating to Google (Proxy: {proxy_url})")
             
-            await page.goto(url)
-            await human_delay()
-
-            # Handle parsing on the loaded page
-            cards = await page.query_selector_all('ul.jobs-search__results-list > li')
-            num_cards = len(cards)
-            logger.info(f"Found {num_cards} job cards on current view.")
-
-            for i in range(num_cards):
-                try:
-                    # Re-fetch cards to avoid detached DOM node errors (React re-renders)
-                    current_cards = await page.query_selector_all('ul.jobs-search__results-list > li')
-                    if i >= len(current_cards):
-                        break
-                    card = current_cards[i]
-                    
-                    await card.scroll_into_view_if_needed()
-                    job_data = await parse_job_card(page, card)
-                    if job_data and job_data.get("job_link"):
-                        await save_job(job_data)
-                    await asyncio.sleep(random.uniform(1, 3))
-                except Exception as e:
-                    logger.error(f"Error processing card index {i}: {e}")
+            try:
+                await page.goto(url, wait_until="domcontentloaded")
+                await human_delay()
+                
+                # Check for captcha
+                if "sorry/index" in page.url or await page.query_selector('form#captcha-form'):
+                    logger.warning("Google CAPTCHA detected. Skipping this page / trying new proxy next time.")
+                    await context.close()
+                    continue
+                
+                # Parse Google results
+                results = await page.query_selector_all('div.g')
+                logger.info(f"Found {len(results)} search results on current Google page.")
+                
+                saved_count = 0
+                for result in results:
+                    person_data = await parse_google_result(result)
+                    if person_data:
+                        await save_person(person_data)
+                        saved_count += 1
+                        
+                logger.info(f"Successfully saved {saved_count} people from page {page_index+1}")
+                
+            except Exception as e:
+                logger.error(f"Error on page {page_index+1}: {e}")
             
-            # Close context to clear cookies, session, and disconnect proxy
             await context.close()
-            
-            logger.info("Taking a short break before the next page...")
+            logger.info("Taking a break before the next Google page...")
             await human_delay()
 
         await browser.close()

@@ -1,82 +1,173 @@
-let allJobs = [];
+let currentTab = 'people';
+let allData = {
+    people: [],
+    jobs: []
+};
+let totals = {
+    people: 0,
+    jobs: 0
+};
 
 document.addEventListener('DOMContentLoaded', () => {
-    fetchJobs();
+    // Initial fetch
+    fetchData('people');
+    fetchData('jobs');
 
+    // UI Elements
     const searchInput = document.getElementById('search-input');
     const locationInput = document.getElementById('location-input');
     const resetBtn = document.getElementById('reset-btn');
+    const tabs = document.querySelectorAll('.nav-tab');
 
-    searchInput.addEventListener('input', renderJobs);
-    locationInput.addEventListener('input', renderJobs);
+    // Event Listeners
+    searchInput.addEventListener('input', renderList);
+    locationInput.addEventListener('input', renderList);
     
     resetBtn.addEventListener('click', () => {
         searchInput.value = '';
         locationInput.value = '';
-        renderJobs();
+        renderList();
+    });
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            tabs.forEach(t => t.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            
+            currentTab = e.currentTarget.getAttribute('data-tab');
+            
+            const titleEl = document.getElementById('section-title');
+            titleEl.textContent = currentTab === 'people' ? 'Список Кандидатів' : 'Список Вакансій';
+            
+            updateTotalStat();
+            renderList();
+        });
     });
 });
 
-async function fetchJobs() {
+async function fetchData(type) {
     try {
-        // Fetch from the API. When running locally via Nginx, /api/jobs will proxy to the backend.
-        // For testing without Nginx, we point to localhost:8000
-        const apiUrl = '/api/jobs?limit=100';
-
+        const apiUrl = `/api/${type}?limit=100`;
         const res = await fetch(apiUrl);
         const data = await res.json();
         
-        allJobs = data.jobs || [];
+        allData[type] = data[type] || [];
+        totals[type] = data.total || allData[type].length;
         
-        document.getElementById('total-stat').textContent = data.total || allJobs.length;
-        document.getElementById('tab-count').textContent = data.total || allJobs.length;
-        
-        renderJobs();
+        if (currentTab === type) {
+            updateTotalStat();
+            renderList();
+        }
     } catch (err) {
-        console.error('Failed to fetch jobs', err);
-        document.getElementById('job-list').innerHTML = `<div class="loading" style="color:#ef4444">Помилка завантаження даних. Переконайтеся, що API працює.</div>`;
+        console.error(`Failed to fetch ${type}`, err);
+        if (currentTab === type) {
+            document.getElementById('list-container').innerHTML = `
+                <div class="loading-state" style="color:#ef4444">
+                    Помилка завантаження. API недоступне.
+                </div>`;
+        }
     }
 }
 
-function renderJobs() {
-    const list = document.getElementById('job-list');
+function updateTotalStat() {
+    const totalEl = document.getElementById('total-stat');
+    
+    // Create an animation effect for the number
+    let currentVal = parseInt(totalEl.textContent) || 0;
+    const targetVal = totals[currentTab] || 0;
+    
+    if (currentVal === targetVal) {
+        totalEl.textContent = targetVal;
+        return;
+    }
+    
+    const duration = 500;
+    const frames = 20;
+    const step = (targetVal - currentVal) / frames;
+    let frame = 0;
+    
+    const timer = setInterval(() => {
+        frame++;
+        currentVal += step;
+        totalEl.textContent = Math.round(currentVal);
+        
+        if (frame >= frames) {
+            clearInterval(timer);
+            totalEl.textContent = targetVal;
+        }
+    }, duration / frames);
+}
+
+function renderList() {
+    const list = document.getElementById('list-container');
     const searchQuery = document.getElementById('search-input').value.toLowerCase();
     const locQuery = document.getElementById('location-input').value.toLowerCase();
+    
+    const currentList = allData[currentTab];
 
-    const filtered = allJobs.filter(job => {
-        const textMatch = (job.title + " " + job.company).toLowerCase().includes(searchQuery);
-        const locMatch = (job.location || "").toLowerCase().includes(locQuery);
+    const filtered = currentList.filter(item => {
+        let textMatch = false;
+        let locMatch = false;
+        
+        if (currentTab === 'people') {
+            textMatch = (item.name + " " + (item.headline || "") + " " + (item.snippet || "")).toLowerCase().includes(searchQuery);
+            locMatch = (item.location || "").toLowerCase().includes(locQuery);
+        } else {
+            textMatch = (item.title + " " + item.company).toLowerCase().includes(searchQuery);
+            locMatch = (item.location || "").toLowerCase().includes(locQuery);
+        }
+        
         return textMatch && locMatch;
     });
 
     document.getElementById('filtered-count').textContent = filtered.length;
 
     if (filtered.length === 0) {
-        list.innerHTML = `<div class="loading">Вакансій не знайдено 😔</div>`;
+        list.innerHTML = `
+            <div class="loading-state">
+                <p>Нічого не знайдено за вашим запитом 😔</p>
+            </div>`;
         return;
     }
 
-    list.innerHTML = filtered.map(job => {
-        const companyInitial = job.company ? job.company.charAt(0).toUpperCase() : 'C';
-        // Date formatting
-        let dateStr = job.date_posted || '';
-        
-        return `
-            <a href="${job.job_link}" target="_blank" class="job-card">
-                <div class="job-avatar">${companyInitial}</div>
-                <div class="job-details">
-                    <div class="job-title-row">
-                        <div class="job-title">${job.title}</div>
-                        <div class="job-date">${dateStr}</div>
+    list.innerHTML = filtered.map(item => {
+        if (currentTab === 'people') {
+            const initial = item.name ? item.name.charAt(0).toUpperCase() : '👤';
+            return `
+                <a href="${item.profile_link}" target="_blank" class="result-card">
+                    <div class="card-avatar">${initial}</div>
+                    <div class="card-details">
+                        <div class="card-title-row">
+                            <div class="card-title">${item.name}</div>
+                        </div>
+                        <div class="card-meta">
+                            <span>📍 ${item.location || 'Не вказано'}</span>
+                            <span>•</span>
+                            <span>💼 ${item.headline || ''}</span>
+                        </div>
+                        <div class="card-desc">${item.snippet || ''}</div>
                     </div>
-                    <div class="job-meta">
-                        <span>📍 ${job.location || 'Невідомо'}</span>
-                        <span>•</span>
-                        <span>🏢 ${job.company}</span>
+                </a>
+            `;
+        } else {
+            const initial = item.company ? item.company.charAt(0).toUpperCase() : 'C';
+            return `
+                <a href="${item.job_link}" target="_blank" class="result-card">
+                    <div class="card-avatar job-avatar">${initial}</div>
+                    <div class="card-details">
+                        <div class="card-title-row">
+                            <div class="card-title">${item.title}</div>
+                            <div class="card-date">${item.date_posted || ''}</div>
+                        </div>
+                        <div class="card-meta">
+                            <span>📍 ${item.location || 'Невідомо'}</span>
+                            <span>•</span>
+                            <span>🏢 ${item.company}</span>
+                        </div>
+                        <div class="card-desc">${item.description || ''}</div>
                     </div>
-                    <div class="job-desc">${job.description || ''}</div>
-                </div>
-            </a>
-        `;
+                </a>
+            `;
+        }
     }).join('');
 }

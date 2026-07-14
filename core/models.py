@@ -15,3 +15,14 @@ class Job(Base):
     job_link = Column(String(2048), unique=True, nullable=False)
     description = Column(Text)
     scraped_at = Column(DateTime, default=datetime.utcnow)
+
+class Person(Base):
+    __tablename__ = "people"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    headline = Column(Text)
+    location = Column(String(255))
+    profile_link = Column(String(2048), unique=True, nullable=False)
+    snippet = Column(Text)
+    scraped_at = Column(DateTime, default=datetime.utcnow)
