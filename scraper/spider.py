@@ -15,18 +15,27 @@ logger = logging.getLogger(__name__)
 async def human_delay():
     await asyncio.sleep(random.uniform(3, 8))
 
-async def parse_bing_result(card) -> Dict[str, Any]:
+async def parse_ddg_result(card) -> Dict[str, Any]:
     try:
-        # Evaluate to extract info from Bing result (li.b_algo)
         info = await card.evaluate('''el => {
-            const linkEl = el.querySelector('h2 a');
-            const snippetEl = el.querySelector('.b_caption p') || el.querySelector('.b_algoSlug') || el.innerText;
+            const linkEl = el.querySelector('.result__url');
+            const titleEl = el.querySelector('.result__title');
+            const snippetEl = el.querySelector('.result__snippet');
             
             let link = linkEl ? linkEl.getAttribute('href') : "";
-            let fullTitle = linkEl ? linkEl.innerText : "";
-            let snippet = snippetEl && typeof snippetEl !== "string" ? snippetEl.innerText : "";
+            // DDG sometimes prepends their own redirect URL, extract the real one
+            if (link.includes('?q=')) {
+                try {
+                    const urlParams = new URLSearchParams(link.split('?')[1]);
+                    const realUrl = urlParams.get('q');
+                    if (realUrl) link = realUrl;
+                } catch(e) {}
+            }
             
-            // Basic parsing of LinkedIn title (e.g. "John Doe - Software Engineer - Google | LinkedIn")
+            let fullTitle = titleEl ? titleEl.innerText : "";
+            let snippet = snippetEl ? snippetEl.innerText : "";
+            
+            // Basic parsing of LinkedIn title
             let name = fullTitle;
             let headline = fullTitle;
             
@@ -50,18 +59,17 @@ async def parse_bing_result(card) -> Dict[str, Any]:
         
         # We only want LinkedIn profiles
         if info['profile_link'] and 'linkedin.com/in/' in info['profile_link']:
-            # Clean tracking params from URL
             info['profile_link'] = info['profile_link'].split('?')[0]
-            info['location'] = SEARCH_LOCATION # Assign search location since exact is hard from snippet
+            info['location'] = SEARCH_LOCATION
             return info
         return None
     except Exception as e:
-        logger.error(f"Error parsing bing result: {e}")
+        logger.error(f"Error parsing ddg result: {e}")
         return None
 
 async def run_scraper():
     ua = UserAgent()
-    pages_to_scrape = 5 # Bing pages (10 results per page)
+    pages_to_scrape = 5
     
     async with async_playwright() as p:
         browser_args = [
@@ -74,61 +82,67 @@ async def run_scraper():
             args=browser_args
         )
         
-        # Build Bing Dork query
-        # e.g., site:linkedin.com/in/ "Python Developer" "London"
         query = f'site:linkedin.com/in/ "{SEARCH_KEYWORDS}" "{SEARCH_LOCATION}"'
         encoded_query = urllib.parse.quote_plus(query)
         
-        for page_index in range(pages_to_scrape):
-            proxy = None
-            if PROXIES_LIST:
-                proxy = random.choice(PROXIES_LIST)
+        proxy = random.choice(PROXIES_LIST) if PROXIES_LIST else None
+        
+        context = await browser.new_context(
+            user_agent=ua.random,
+            viewport={'width': 1920, 'height': 1080},
+            proxy=proxy
+        )
+        
+        from playwright_stealth import stealth_async
+        page = await context.new_page()
+        await stealth_async(page)
+        
+        # Start at the first page
+        url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+        
+        proxy_url = proxy.get("server") if proxy else "None"
+        logger.info(f"Navigating to DuckDuckGo HTML (Proxy: {proxy_url})")
+        
+        try:
+            await page.goto(url, wait_until="domcontentloaded")
+            await human_delay()
+            
+            for page_index in range(pages_to_scrape):
+                logger.info(f"Scraping DDG Page {page_index+1}/{pages_to_scrape}...")
                 
-            context = await browser.new_context(
-                user_agent=ua.random,
-                viewport={'width': 1920, 'height': 1080},
-                proxy=proxy
-            )
-            
-            from playwright_stealth import stealth_async
-            page = await context.new_page()
-            await stealth_async(page)
-            
-            # Bing uses first=1, 11, 21 for pagination
-            first = (page_index * 10) + 1
-            url = f"https://www.bing.com/search?q={encoded_query}&first={first}"
-            
-            proxy_url = proxy.get("server") if proxy else "None"
-            logger.info(f"Page {page_index+1}/{pages_to_scrape}: Navigating to Bing (Proxy: {proxy_url})")
-            
-            try:
-                await page.goto(url, wait_until="domcontentloaded")
-                await human_delay()
+                # Parse results
+                results = await page.query_selector_all('.result')
+                logger.info(f"Found {len(results)} search results on current DDG page.")
                 
-                # Check for captcha or blocks on Bing
-                if "b_captcha" in await page.content():
-                    logger.warning("Bing CAPTCHA detected. Skipping this page / trying new proxy next time.")
-                    await context.close()
-                    continue
-                
-                # Parse Bing results
-                results = await page.query_selector_all('li.b_algo')
-                logger.info(f"Found {len(results)} search results on current Bing page.")
+                if len(results) == 0:
+                    logger.warning("No results found or blocked. Trying to take a screenshot for debugging (if possible) and stopping.")
+                    break
                 
                 saved_count = 0
                 for result in results:
-                    person_data = await parse_bing_result(result)
+                    person_data = await parse_ddg_result(result)
                     if person_data:
                         await save_person(person_data)
                         saved_count += 1
                         
                 logger.info(f"Successfully saved {saved_count} people from page {page_index+1}")
                 
-            except Exception as e:
-                logger.error(f"Error on page {page_index+1}: {e}")
+                if page_index < pages_to_scrape - 1:
+                    # Click Next button
+                    next_button = await page.query_selector("input[value='Next']")
+                    if not next_button:
+                        logger.info("No 'Next' button found. Reached end of results.")
+                        break
+                        
+                    logger.info("Clicking 'Next' button...")
+                    await asyncio.gather(
+                        page.wait_for_load_state("domcontentloaded"),
+                        next_button.click()
+                    )
+                    await human_delay()
+                    
+        except Exception as e:
+            logger.error(f"Error during DuckDuckGo scraping: {e}")
             
-            await context.close()
-            logger.info("Taking a break before the next Bing page...")
-            await human_delay()
-
+        await context.close()
         await browser.close()
