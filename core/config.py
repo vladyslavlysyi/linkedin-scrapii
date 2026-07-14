@@ -24,21 +24,22 @@ def load_proxies():
                 line = line.strip()
                 if not line or line.startswith("#"): continue
                 # Format: ip:port:username:password
-                parts = line.split(":")
-                if len(parts) == 4:
-                    ip, port, user, pw = parts
-                    proxies.append({
-                        "server": f"http://{ip}:{port}",
-                        "username": user,
-                        "password": pw
-                    })
-                elif len(parts) == 2:
-                    ip, port = parts
-                    proxies.append({
-                        "server": f"http://{ip}:{port}"
-                    })
-                elif "://" in line:
+                if "://" in line:
                     proxies.append({"server": line})
+                else:
+                    parts = line.split(":")
+                    if len(parts) == 4:
+                        ip, port, user, pw = parts
+                        proxies.append({
+                            "server": f"http://{ip}:{port}",
+                            "username": user,
+                            "password": pw
+                        })
+                    elif len(parts) == 2:
+                        ip, port = parts
+                        proxies.append({
+                            "server": f"http://{ip}:{port}"
+                        })
     
     if not proxies and PROXY_SERVER:
         proxy = {"server": PROXY_SERVER}
