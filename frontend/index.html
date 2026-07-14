@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkedIn Jobs Queue</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="topbar">
+        <div class="logo">
+            <span class="icon">💼</span>
+            <div class="logo-text">
+                <h1>ЧЕРГА ВАКАНСІЙ</h1>
+                <p>зібрано скрапером із LinkedIn</p>
+            </div>
+        </div>
+        <div class="top-stats">
+            <div class="stat">
+                <span class="stat-num" id="total-stat">0</span>
+                <span class="stat-label">всього в базі</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div class="filter-header">
+                <h2>ФІЛЬТРИ</h2>
+                <button class="reset-btn" id="reset-btn">↺ Скинути</button>
+            </div>
+            
+            <div class="filter-group">
+                <label>Пошук</label>
+                <input type="text" id="search-input" placeholder="🔍 назва, компанія...">
+            </div>
+
+            <!-- Removed "Level" filter because LinkedIn scraper doesn't easily extract Junior/Middle/Senior as structured tags, but we could search by keywords in the future -->
+
+            <div class="filter-group">
+                <label>Місце / Локація</label>
+                <input type="text" id="location-input" placeholder="🌍 Всі локації...">
+            </div>
+
+        </aside>
+
+        <main class="content">
+            <div class="content-header">
+                <div class="tabs">
+                    <button class="tab active">Усі <span id="tab-count">0</span></button>
+                </div>
+            </div>
+
+            <div class="job-count-text">
+                <span id="filtered-count">0</span> записів
+            </div>
+
+            <div class="job-list" id="job-list">
+                <!-- Job cards will be injected here by JS -->
+                <div class="loading">Завантаження вакансій...</div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
