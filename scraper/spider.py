@@ -7,7 +7,7 @@ from typing import Dict, Any
 from playwright.async_api import async_playwright
 from fake_useragent import UserAgent
 
-from core.config import PROXIES_LIST, SEARCH_KEYWORDS, SEARCH_LOCATION
+from core.config import SEARCH_KEYWORDS, SEARCH_LOCATION
 from core.database import save_person
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,6 @@ async def parse_ddg_result(card) -> Dict[str, Any]:
             const snippetEl = el.querySelector('.result__snippet');
             
             let link = linkEl ? linkEl.getAttribute('href') : "";
-            // DDG sometimes prepends their own redirect URL, extract the real one
             if (link.includes('?q=')) {
                 try {
                     const urlParams = new URLSearchParams(link.split('?')[1]);
@@ -35,7 +34,6 @@ async def parse_ddg_result(card) -> Dict[str, Any]:
             let fullTitle = titleEl ? titleEl.innerText : "";
             let snippet = snippetEl ? snippetEl.innerText : "";
             
-            // Basic parsing of LinkedIn title
             let name = fullTitle;
             let headline = fullTitle;
             
@@ -57,7 +55,6 @@ async def parse_ddg_result(card) -> Dict[str, Any]:
             };
         }''')
         
-        # We only want LinkedIn profiles
         if info['profile_link'] and 'linkedin.com/in/' in info['profile_link']:
             info['profile_link'] = info['profile_link'].split('?')[0]
             info['location'] = SEARCH_LOCATION
@@ -82,26 +79,27 @@ async def run_scraper():
             args=browser_args
         )
         
-        query = f'site:linkedin.com/in/ "{SEARCH_KEYWORDS}" "{SEARCH_LOCATION}"'
+        # Build query properly
+        query_parts = [f'site:linkedin.com/in/', f'"{SEARCH_KEYWORDS}"']
+        if SEARCH_LOCATION and SEARCH_LOCATION.lower() != "worldwide":
+            query_parts.append(f'"{SEARCH_LOCATION}"')
+        query = " ".join(query_parts)
+        
         encoded_query = urllib.parse.quote_plus(query)
         
-        proxy = random.choice(PROXIES_LIST) if PROXIES_LIST else None
-        
+        # Use Direct VPS IP to prevent DDG from blocking datacenter proxy lists
         context = await browser.new_context(
             user_agent=ua.random,
-            viewport={'width': 1920, 'height': 1080},
-            proxy=proxy
+            viewport={'width': 1920, 'height': 1080}
         )
         
         from playwright_stealth import stealth_async
         page = await context.new_page()
         await stealth_async(page)
         
-        # Start at the first page
         url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
         
-        proxy_url = proxy.get("server") if proxy else "None"
-        logger.info(f"Navigating to DuckDuckGo HTML (Proxy: {proxy_url})")
+        logger.info(f"Navigating to DuckDuckGo HTML using Direct IP (Query: {query})")
         
         try:
             await page.goto(url, wait_until="domcontentloaded")
@@ -110,12 +108,11 @@ async def run_scraper():
             for page_index in range(pages_to_scrape):
                 logger.info(f"Scraping DDG Page {page_index+1}/{pages_to_scrape}...")
                 
-                # Parse results
                 results = await page.query_selector_all('.result')
                 logger.info(f"Found {len(results)} search results on current DDG page.")
                 
                 if len(results) == 0:
-                    logger.warning("No results found or blocked. Trying to take a screenshot for debugging (if possible) and stopping.")
+                    logger.warning("No results found or blocked. Stopping pagination.")
                     break
                 
                 saved_count = 0
@@ -128,7 +125,6 @@ async def run_scraper():
                 logger.info(f"Successfully saved {saved_count} people from page {page_index+1}")
                 
                 if page_index < pages_to_scrape - 1:
-                    # Click Next button
                     next_button = await page.query_selector("input[value='Next']")
                     if not next_button:
                         logger.info("No 'Next' button found. Reached end of results.")
